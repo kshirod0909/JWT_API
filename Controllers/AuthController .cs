@@ -86,5 +86,50 @@ namespace JWT_API.Controllers
         {
             return Ok(new { Message = "You are authorized" });
         }
+
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
+        {
+            if (string.IsNullOrEmpty(request.RefreshToken))
+                return BadRequest("Refresh token is required");
+
+            using var sha = SHA256.Create();
+            var refreshHash = sha.ComputeHash(Encoding.UTF8.GetBytes(request.RefreshToken));
+
+            // Get stored token details
+            var stored = await _repo.GetRefreshTokenAsync(refreshHash);
+            if (stored == null)
+                return Unauthorized("Invalid refresh token");
+
+            // Check expiration
+            if (stored.ExpiresAtUtc < DateTime.UtcNow)
+                return Unauthorized("Refresh token expired");
+
+            // Get the user info for this token
+            var user = await _repo.GetUserByEmailAsync(stored.Email); // OR by userId if you modify repo
+            if (user == null)
+                return Unauthorized("User not found");
+
+            // Generate new access token
+            var newAccessToken = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role);
+
+            // Optionally generate a new refresh token (recommended)
+            var newRefreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+            var newRefreshHash = sha.ComputeHash(Encoding.UTF8.GetBytes(newRefreshToken));
+            var newExpiresAt = DateTime.UtcNow.AddDays(int.Parse(_config["Jwt:RefreshTokenExpirationDays"]));
+
+            // Replace old refresh token
+            await _repo.ReplaceRefreshTokenAsync(user.Id, newRefreshHash, newExpiresAt);
+
+            return Ok(new AuthResponse
+            {
+                Success = true,
+                Message = "Token refreshed successfully",
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken
+            });
+        }
+
+
     }
 }

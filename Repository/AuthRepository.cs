@@ -2,6 +2,7 @@
 using System.Data;
 using System.Threading.Tasks;
 using Dapper;
+using JWT_API.Modals;
 using Microsoft.Data.SqlClient;
 
 namespace JWT_API.Repository
@@ -53,6 +54,22 @@ namespace JWT_API.Repository
             using var conn = Connection;
             await conn.ExecuteAsync("INSERT INTO RefreshTokens(UserId,TokenHash,ExpiresAtUtc) VALUES(@UserId,@TokenHash,@ExpiresAtUtc)",
                 new { UserId = userId, TokenHash = tokenHash, ExpiresAtUtc = expiresAt });
+        }
+
+        public async Task<RefreshToken?> GetRefreshTokenAsync(byte[] refreshHash)
+        {
+            using var conn = Connection;
+            string sql = "select * from RefreshTokens R inner join Users U on R.UserId=U.Id WHERE TokenHash = @refreshHash";
+            return await conn.QueryFirstOrDefaultAsync<RefreshToken>(sql, new { refreshHash });
+        }
+
+        public async Task ReplaceRefreshTokenAsync(Guid userId, byte[] newHash, DateTime expiresAt)
+        {
+            using var conn = Connection;
+            string sql = @"UPDATE RefreshTokens 
+                   SET TokenHash = @newHash, ExpiresAtUtc = @expiresAt 
+                   WHERE UserId = @userId";
+            await conn.ExecuteAsync(sql, new { userId, newHash, expiresAt });
         }
     }
 }
